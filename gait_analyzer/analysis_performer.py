@@ -1,7 +1,6 @@
 import os
 import pickle
 from scipy.io import savemat
-# import git
 from datetime import date
 import subprocess
 import json

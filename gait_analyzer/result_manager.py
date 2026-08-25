@@ -12,7 +12,7 @@ from gait_analyzer.subject import Subject, Side
 from gait_analyzer.biomechanics_quantities.marginofstability_calculator import MarginofStabilityCalculation
 from gait_analyzer.biomechanics_quantities.mechanical_energy_calculator import MechanicalEnergyCalculator
 from gait_analyzer.biomechanics_quantities.com_mma_distance_calculator import ComMmaDistanceCalculator
-from gait_analyzer.biomechanics_quantities.percentage_of_instability_calculator import ProbabilityOfInstability
+from gait_analyzer.biomechanics_quantities.probability_of_instability_calculator import ProbabilityOfInstability
 
 class ResultManager:
     """
@@ -70,6 +70,7 @@ class ResultManager:
         self.mechanical_energy_calculator = None
         self.com_mma_distance_calculator = None
         self.mechanical_energy = None
+        self.gait_parameters_all = None
         self.E_pot = None
         self.E_kin = None
 
@@ -319,11 +320,11 @@ class ResultManager:
         )
 
     def estimate_optimally(
-        self,
-        cycle_to_analyze: int,
-        plot_solution_flag: bool = False,
-        animate_solution_flag: bool = False,
-        skip_if_existing: bool = False,
+            self,
+            cycles_to_analyze: int | list,  # <- int | list
+            plot_solution_flag: bool = False,
+            animate_solution_flag: bool = False,
+            skip_if_existing: bool = False,
     ):
 
         # Checks
@@ -337,20 +338,25 @@ class ResultManager:
             )
         if self.kinematics_reconstructor is None:
             raise Exception(
-                "Please run the kinematics reconstruction first by running ResultManager.estimate_optimally()"
+                "Please run the kinematics reconstruction first by running ResultManager.reconstruct_kinematics()"
             )
         if self.inverse_dynamics_performer is None:
             raise Exception("Please run the inverse dynamics first by running ResultManager.perform_inverse_dynamics()")
+        if self.experimental_data.gait_parameters_all is None:
+            raise Exception(
+                "Please compute gait parameters first by running ResultManager.extract_gait_parameters()"
+            )
 
         # Perform the optimal estimation optimization
         self.optimal_estimator = OptimalEstimator(
-            cycle_to_analyze=cycle_to_analyze,
+            cycles_to_analyze=cycles_to_analyze,
             subject=self.subject,
             model_creator=self.model_creator,
             experimental_data=self.experimental_data,
             events=self.events,
             kinematics_reconstructor=self.kinematics_reconstructor,
             inverse_dynamic_performer=self.inverse_dynamics_performer,
+            gait_parameters_all=self.experimental_data.gait_parameters_all,
             plot_solution_flag=plot_solution_flag,
             animate_solution_flag=animate_solution_flag,
             skip_if_existing=skip_if_existing,

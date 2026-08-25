@@ -265,7 +265,6 @@ class KinematicsReconstructor:
             with open(result_file_full_path, "rb") as file:
                 data = pickle.load(file)
                 self.frame_range = data["frame_range"]
-                #self.padded_frame_range = data["padded_frame_range"]
                 self.markers = data["markers"]
                 self.cycles_to_analyze = data["cycles_to_analyze_kin"]
                 self.t = data["t"]
@@ -348,16 +347,7 @@ class KinematicsReconstructor:
         Perform the kinematics reconstruction for all frames, and then only keep the frames in the cycles to analyze.
         This is a waist of computation, but the beginning of the reconstruction is always shitty.
         """
-        #self.frame_range, self.padded_frame_range = self.events.get_frame_range(self.cycles_to_analyze)
-        # if self.frame_range != self.padded_frame_range:
-        #     index_to_keep = range(
-        #         self.frame_range.start - self.padded_frame_range.start,
-        #         (self.frame_range.start - self.padded_frame_range.start)
-        #         + (self.frame_range.stop - self.frame_range.start),
-        #     )
-        # else:
-        #     index_to_keep = range(len(self.frame_range))
-        # markers = self.experimental_data.markers_sorted[:, :, :] #self.padded_frame_range]
+
         self.frame_range = range(self.experimental_data.markers_sorted.shape[2])
         markers = self.experimental_data.markers_sorted[:, :, :]
 
@@ -368,7 +358,7 @@ class KinematicsReconstructor:
             if recons_method in [ReconstructionType.ONLY_LM, ReconstructionType.LM, ReconstructionType.TRF]:
                 ik = biorbd.InverseKinematics(self.biorbd_model, markers)
                 q_recons = ik.solve(method=recons_method.value)
-                self.q = q_recons #[:, index_to_keep]
+                self.q = q_recons
                 residuals = ik.sol()["residuals"]
                 if self.q_regularization_weight is not None or self.qdot_regularization_weight is not None:
                     print("Warning: Regularization weights are only used for the LSQ reconstruction method.")
@@ -394,7 +384,7 @@ class KinematicsReconstructor:
                     animate_reconstruction=False,
                     compute_residual_distance=True,
                 )
-                self.q = q_recons #[:, index_to_keep]
+                self.q = q_recons
                 dt = self.experimental_data.markers_dt
                 self.t = np.arange(markers.shape[2]) * dt
                 self.q_filtered, self.qdot, self.qddot = self.filter_kinematics()
@@ -409,10 +399,10 @@ class KinematicsReconstructor:
                     self.experimental_data.c3d_full_file_path,
                     frames=slice(self.frame_range),
                 )
-                self.q = q_filtered #[:, index_to_keep]
-                self.q_filtered = q_filtered #[:, index_to_keep]
-                self.qdot = qdot #[:, index_to_keep]
-                self.qddot = qddot #[:, index_to_keep]
+                self.q = q_filtered
+                self.q_filtered = q_filtered
+                self.qdot = qdot
+                self.qddot = qddot
 
                 residuals = np.zeros(
                     (
@@ -439,8 +429,8 @@ class KinematicsReconstructor:
                 "The reconstruction was not successful :( Please consider using a different method or checking the experimental data labeling."
             )
 
-        self.q = q_recons #[:, index_to_keep]
-        self.markers = markers #[:, :, index_to_keep]
+        self.q = q_recons
+        self.markers = markers
         self.marker_residuals = residuals
 
     def filter_kinematics(self):
@@ -481,7 +471,13 @@ class KinematicsReconstructor:
                 qddot[i_data, 0] = (qdot[i_data, 1] - qdot[i_data, 0]) / (self.t[1] - self.t[0])
                 qddot[i_data, 1:-1] = (qdot[i_data, 2:] - qdot[i_data, :-2]) / (self.t[2:] - self.t[:-2])
                 qddot[i_data, -1] = (qdot[i_data, -1] - qdot[i_data, -2]) / (self.t[-1] - self.t[-2])
-
+            for i_data in range(qdot.shape[0]):
+                qdot[i_data, :] = Operator.apply_filtfilt(
+                    qdot[i_data:i_data + 1, :],
+                    order=4,
+                    sampling_rate=sampling_rate,
+                    cutoff_freq=6
+                )
             return q_filtered, qdot, qddot
 
         q_filtered, qdot, qddot = filter(self.q)

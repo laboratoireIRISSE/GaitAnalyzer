@@ -151,6 +151,11 @@ class ExperimentalData:
                         self.emg_units = 1_000_000  # Convert to microV
 
             # Make sure all MVC are declared
+
+            if not self.model_creator.mvc_values:
+                print("No MVC values available, skipping EMG normalization.")
+                self.normalized_emg = None  # ou un tableau de NaN selon ce qu'attend le reste du pipeline
+                return
             for analog_name in self.analog_names:
                 if analog_name not in self.model_creator.mvc_values.keys():
                     raise RuntimeError(
@@ -180,12 +185,6 @@ class ExperimentalData:
                     0  # There are still small negative values after meca.abs()
                 )
 
-                # import matplotlib.pyplot as plt
-                # plt.figure()
-                # plt.plot(emg.T[:200, :])
-                # plt.savefig("tata.png")
-                # plt.show()
-
             self.normalized_emg = normalized_emg
 
             if np.any(self.normalized_emg > 1):
@@ -207,9 +206,24 @@ class ExperimentalData:
             nb_platforms = len(platforms)
             units = self.marker_units  # We assume that the all position units are the same as the markers'
             self.platform_corners = []
-            for platform in platforms:
-                self.platform_corners += [platform["corners"] * units]
-
+            # for platform in platforms:
+            #     self.platform_corners += [platform["corners"] * units]
+            # Positions fixes des plateformes (en mm, issues de LEM03 comme référence)
+            # I fix the platform coordinates because someone messed up the QTM setup in the lab...
+            fixed_corners = [
+                np.array([
+                    [1614., 1614., -44.3, -44.3],
+                    [1038., 527., 527., 1038.],
+                    [0., 0., 0., 0.]
+                ]) * units,  # Platform 1
+                np.array([
+                    [1614., 1614., -44.3, -44.3],
+                    [494., -17., -17., 494.],
+                    [0., 0., 0., 0.]
+                ]) * units,  # Platform 2
+            ]
+            for corners in fixed_corners:
+                self.platform_corners += [corners]
             # Initialize arrays for storing external forces and moments
             force_filtered = np.zeros((nb_platforms, 3, self.nb_analog_frames))
             moment_filtered = np.zeros((nb_platforms, 3, self.nb_analog_frames))
@@ -243,11 +257,14 @@ class ExperimentalData:
                 null_idx = np.where(np.linalg.norm(force_filtered[i_platform, :, :], axis=0) < self.force_threshold)[0]
                 moment_filtered[i_platform, :, null_idx] = np.nan
                 force_filtered[i_platform, :, null_idx] = np.nan
+                tz_filtered[i_platform, :, null_idx] = np.nan
 
                 # Do not trust the CoP from ezc3d and recompute it after filtering the forces and moments
                 cop_ezc3d = platforms[i_platform]["center_of_pressure"] * units
 
                 r_z = 0  # In our case the reference frame of the platform is at its surface, so the height is 0
+                r_z = np.mean(
+                    self.platform_corners[i_platform][2, :])  # Height of the platform origin (non-zero for some setups)
                 cop_filtered[i_platform, 0, :] = (
                     -(moment_filtered[i_platform, 1, :] - force_filtered[i_platform, 0, :] * r_z)
                     / force_filtered[i_platform, 2, :]
@@ -265,7 +282,8 @@ class ExperimentalData:
                 f_ext_sorted[i_platform, :3, :] = cop_ezc3d[:, :]
                 f_ext_sorted_filtered[i_platform, :3, :] = cop_filtered[i_platform, :, :]
                 f_ext_sorted[i_platform, 3:6, :] = tz[:, :]
-                f_ext_sorted_filtered[i_platform, 3:6, :] = moment_filtered[i_platform, :, :] #Tz
+                # f_ext_sorted_filtered[i_platform, 3:6, :] = moment_filtered[i_platform, :, :] #Tz
+                f_ext_sorted_filtered[i_platform, 3:6, :] = tz_filtered[i_platform, :, :]  # comme f_ext_sorted
                 f_ext_sorted[i_platform, 6:9, :] = force[:, :]
                 f_ext_sorted_filtered[i_platform, 6:9, :] = force_filtered[i_platform, :, :]
 
@@ -276,7 +294,7 @@ class ExperimentalData:
                     if len(bad_index) > 0 and bad_index[0].shape[0] > self.nb_analog_frames / 100:
                         is_good_trial = False
                     cop_filtered[i_platform, i_component, bad_index] = np.nan
-                if np.nanmean(cop_ezc3d[:2, :] - cop_filtered[i_platform, :2, :]) > 1:
+                if np.nanmean(cop_ezc3d[:2, :] - cop_filtered[i_platform, :2, :]) > 1e-3:
                     is_good_trial = False
 
                 if not is_good_trial:
@@ -307,9 +325,9 @@ class ExperimentalData:
                     axs[0].legend()
                     fig.savefig("CoP_filtering_error.png")
                     fig.show()
-                    # raise NotImplementedError(
-                    #     "The force platform data is not computed the same way in ezc3d than in this code, see the CoP graph."
-                    # )
+                    raise NotImplementedError(
+                        "The force platform data is not computed the same way in ezc3d than in this code, see the CoP graph."
+                    )
 
             self.f_ext_sorted = f_ext_sorted
             self.f_ext_sorted_filtered = f_ext_sorted_filtered
@@ -333,17 +351,17 @@ class ExperimentalData:
         raise NotImplementedError("Animation of c3d files is not implemented yet.")
         pass
 
-    def extract_gait_parameters(self, seuil: float = None, nb_cycle: int = None):
+    def extract_gait_parameters(self, threshold: float = None, nb_cycle: int = None):
         """
         Detect gait events from force platforms + CAL markers and compute gait parameters.
-        - seuil: threshold on vertical force (N). If None, use self.force_threshold.
+        - threshold: threshold on vertical force (N). If None, use self.force_threshold.
         - nb_cycle: number of cycles to compute. If None, select up to 5 (or available cycles).
         Results are stored as:
           self.gait_parameters_all = {'right_leg': {...}, 'left_leg': {...}}
           self.gait_parameters_meanstd = {'right_leg': {...}, 'left_leg': {...}}
         """
-        if seuil is None:
-            seuil = self.force_threshold  
+        if threshold is None:
+            threshold = self.force_threshold
 
         try:
             idx_RCAL = self.model_marker_names.index("RCAL")
@@ -375,12 +393,16 @@ class ExperimentalData:
 
         force1 = self.f_ext_sorted_filtered[0, 6:9, :].copy() if nb_platforms >= 1 else None
         force2 = self.f_ext_sorted_filtered[1, 6:9, :].copy() if nb_platforms >= 2 else None
-
+        if force1 is not None:
+            force1 = np.where(np.isnan(force1), 0.0, force1)
+        if force2 is not None:
+            force2 = np.where(np.isnan(force2), 0.0, force2)
         if force1 is None and force2 is None:
             raise RuntimeError("Could not find force arrays on platforms 1 or 2.")
 
+        # TODO: move this code to avoid duplication with the biomechanics quantities computation
 
-        def _gait_parameters_calculation(foot: int, nbcycle: int | None, seuil_local: float):
+        def _gait_parameters_calculation(foot: int, nbcycle: int | None, threshold_local: float):
             if foot == 1:
                 fv_foot1 = force1[2, :].copy() if force1 is not None else np.zeros(self.nb_analog_frames)
                 fv_foot2 = force2[2, :].copy() if force2 is not None else np.zeros(self.nb_analog_frames)
@@ -401,7 +423,7 @@ class ExperimentalData:
             fs_force = self.analogs_sampling_frequency
             fs_mks = self.marker_sampling_frequency
 
-            above = fv_foot1 > seuil_local
+            above = fv_foot1 > threshold_local
             idx_all = np.where(np.diff(above.astype(int)) == 1)[0] + 1
 
             if idx_all.size > 1:
@@ -437,21 +459,21 @@ class ExperimentalData:
                 a = use_idx_deb[ii]
                 b = use_idx_end[ii]
                 seg = fv_foot1[a: b + 1]
-                rel = np.where(seg > seuil_local)[0]
+                rel = np.where(seg > threshold_local)[0]
                 if rel.size == 0:
                     end_contact_foot_study[ii] = a
                 else:
                     end_contact_foot_study[ii] = a + rel[-1]
 
                 seg2 = fv_foot2[a: b + 1]
-                rel2 = np.where(seg2 < seuil_local)[0]
+                rel2 = np.where(seg2 < threshold_local)[0]
                 if rel2.size == 0:
                     end_contact_foot_opp[ii] = a
                 else:
                     end_contact_foot_opp[ii] = a + rel2[0]
 
                 pre_seg = fv_foot2[: use_idx_end[ii] + 1]
-                rel3 = np.where(pre_seg < seuil_local)[0]
+                rel3 = np.where(pre_seg < threshold_local)[0]
                 if rel3.size == 0:
                     start_contact_foot_opp[ii] = 0
                 else:
@@ -507,15 +529,17 @@ class ExperimentalData:
                 "StepWidth": step_width,
                 "StrideLength": stride_length,
                 "Velocity": velocity,
+                "idx_deb": use_idx_deb,
+                "idx_end": use_idx_end
             }
             return gait_parameters
 
         # compute for left and right (foot 1 and 2 in matlab naming)
-        gait_left = _gait_parameters_calculation(1, nb_cycle, seuil)
-        gait_right = _gait_parameters_calculation(2, nb_cycle, seuil)
-
+        gait_left = _gait_parameters_calculation(1, nb_cycle, threshold)
+        gait_right = _gait_parameters_calculation(2, nb_cycle, threshold)
         self.gait_parameters_all = {"right_leg": gait_right, "left_leg": gait_left}
         self.gait_parameters_meanstd = self._estimation_mean_std_abs_diff_per(self.gait_parameters_all)
+
 
     def _estimation_mean_std_abs_diff_per(self, data):
         """
@@ -566,5 +590,11 @@ class ExperimentalData:
             "analogs_time_vector": self.analogs_time_vector,
             "normalized_emg": self.normalized_emg,
             "gait_parameters_all": self.gait_parameters_all,
-            "gait_parameters_meanstd": self.gait_parameters_meanstd
+            "gait_parameters_meanstd": self.gait_parameters_meanstd,
+            "gait_parameters_all": self.gait_parameters_all,
+            "gait_parameters_meanstd": self.gait_parameters_meanstd,
+            "idx_deb_right": self.gait_parameters_all.get("right_leg", {}).get("idx_deb"),
+            "idx_end_right": self.gait_parameters_all.get("right_leg", {}).get("idx_end"),
+            "idx_deb_left": self.gait_parameters_all.get("left_leg", {}).get("idx_deb"),
+            "idx_end_left": self.gait_parameters_all.get("left_leg", {}).get("idx_end"),
         }

@@ -304,11 +304,11 @@ class CyclicEvents:
                 )
                 plt.legend()
                 plt.show()
-                raise RuntimeError("The left heel marker (LCAL) is not moving, please double check the data.")
-            left_heel_moving = left_heel_moving[0] + mid_swing_idx
-            self.events["left_leg_heel_off"] += [
-                int(left_heel_moving * self.experimental_data.markers_dt / self.experimental_data.analogs_dt)
-            ]
+            #     raise RuntimeError("The left heel marker (LCAL) is not moving, please double check the data.")
+            # left_heel_moving = left_heel_moving[0] + mid_swing_idx
+            # self.events["left_leg_heel_off"] += [
+            #     int(left_heel_moving * self.experimental_data.markers_dt / self.experimental_data.analogs_dt)
+            # ]
         # Right
         right_cal_velocity = (
             np.diff(

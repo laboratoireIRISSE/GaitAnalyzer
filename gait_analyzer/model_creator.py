@@ -446,7 +446,9 @@ class ModelCreator:
                 raise ValueError("functional_trials_path must be a string.")
             if not os.path.exists(functional_trials_path):
                 raise RuntimeError(f"Functional trials path {functional_trials_path} does not exist.")
-        if not os.path.exists(mvc_trials_path):
+        # if not os.path.exists(mvc_trials_path):
+        #     raise RuntimeError(f"MVC trials path {mvc_trials_path} does not exist.")
+        if mvc_trials_path is not None and not os.path.exists(mvc_trials_path):
             raise RuntimeError(f"MVC trials path {mvc_trials_path} does not exist.")
         if not isinstance(models_result_folder, str):
             raise ValueError("models_result_folder must be a string.")
@@ -710,9 +712,12 @@ class ModelCreator:
         """
         Extract the maximal EMG signal as the max of the filtered EMG signal for each muscle during the MVC trial.
         """
+        # if self.mvc_trials_path is None:
+        #     raise NotImplementedError("This should eb allowed but I did not take the time to implement it.")
         if self.mvc_trials_path is None:
-            raise NotImplementedError("This should eb allowed but I did not take the time to implement it.")
-
+            print("No MVC trials path provided, skipping MVC extraction.")
+            self.mvc_values = {}
+            return
         mvc_values = {}
         emg_values = {}
         for mvc in os.listdir(self.mvc_trials_path):

@@ -162,6 +162,15 @@ class AngularMomentumCalculator:
         with open(result_file_full_path, "wb") as file:
             pickle.dump(self.outputs(), file)
 
+    def inputs(self):
+        return {
+            "biorbd_model": self.model.path,
+            "q_filtered": self.q,
+            "qdot": self.qdot,
+            "subject_mass": self.subject_mass,
+            "subject_height": self.subject_height,
+        }
+
     def outputs(self):
         return {
             "H_segments": self.H_segments,

@@ -44,6 +44,7 @@ class MarginofStabilityCalculation:
         idx_RCAL = self.model_marker_names.index("RCAL")
         idx_LTT2 = self.model_marker_names.index("LTT2")
         idx_RTT2 = self.model_marker_names.index("RTT2")
+        # TODO: make the marker used to define the feet modulable
 
         AP_MoS = np.full(n_frames, np.nan)
         ML_MoS = np.full(n_frames, np.nan)
@@ -53,6 +54,7 @@ class MarginofStabilityCalculation:
         bos_ML = np.full(n_frames, np.nan)
 
         c3d_static = ezc3d.c3d(self.experimental_data.model_creator.static_trial)
+        # TODO: move the static marker treatment to model_creator
 
         markers = c3d_static["data"]["points"][:3, :, :]
         exp_marker_names = c3d_static["parameters"]["POINT"]["LABELS"]["value"]

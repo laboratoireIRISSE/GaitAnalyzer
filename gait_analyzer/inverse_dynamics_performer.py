@@ -115,19 +115,6 @@ class InverseDynamicsPerformer:
         self.tau = tau
 
     def get_f_ext_at_frame(self, i_marker_node: int):
-        """
-        Constructs a biorbd external forces set object at a specific frame.
-        .
-        Parameters
-        ----------
-        i_marker_node: int
-            The marker frame index.
-        .
-        Returns
-        -------
-        f_ext_set: biorbd externalForceSet
-            The external forces set at the frame.
-        """
         f_ext_set = self.biorbd_model.externalForceSet()
         i_analog_node = Operator.from_marker_frame_to_analog_frame(
             self.experimental_data.analogs_time_vector, self.experimental_data.markers_time_vector, i_marker_node
@@ -141,16 +128,22 @@ class InverseDynamicsPerformer:
         frame_range = list(
             range(i_analog_node - (int(analog_to_marker_ratio / 2)), i_analog_node + (int(analog_to_marker_ratio / 2)))
         )
-        # Average over the marker frame time lapse
+
+        def safe_nanmean(data):
+            result = np.nanmean(data, axis=0)
+            result[np.isnan(result)] = 0.0
+            return result
+
+
         f_ext_set.add(
             "calcn_l",
-            np.mean(self.experimental_data.f_ext_sorted[0, 3:9, frame_range], axis=0),
-            np.mean(self.experimental_data.f_ext_sorted[0, :3, frame_range], axis=0),
+            safe_nanmean(self.experimental_data.f_ext_sorted_filtered[0, 3:9, frame_range]),
+            safe_nanmean(self.experimental_data.f_ext_sorted_filtered[0, :3, frame_range]),
         )
         f_ext_set.add(
             "calcn_r",
-            np.mean(self.experimental_data.f_ext_sorted[1, 3:9, frame_range], axis=0),
-            np.mean(self.experimental_data.f_ext_sorted[1, :3, frame_range], axis=0),
+            safe_nanmean(self.experimental_data.f_ext_sorted_filtered[1, 3:9, frame_range]),
+            safe_nanmean(self.experimental_data.f_ext_sorted_filtered[1, :3, frame_range]),
         )
         return f_ext_set
 
