@@ -128,7 +128,7 @@ class ProbabilityOfInstability:
             mos_segment_ML = self.ML_MoS[start:end]
             mos_segment_AP = self.AP_MoS[start:end]
 
-            # Compute the mean while ignoring NaNs
+            # Compute the meanwhile ignoring NaNs
             if not np.all(np.isnan(mos_segment_ML)):
                 mos_steps_ML.append(np.nanmean(mos_segment_ML))
             if not np.all(np.isnan(mos_segment_AP)):
